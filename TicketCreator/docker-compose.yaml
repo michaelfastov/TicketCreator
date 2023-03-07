@@ -41,6 +41,3 @@ services:
             - rabbitmq
         volumes:
             - ./certs:/https:ro
-
-volumes:
-    certs:
