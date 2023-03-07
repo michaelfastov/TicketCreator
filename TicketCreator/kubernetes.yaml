@@ -1,0 +1,205 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq-deployment
+  labels:
+    app: ticketing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ticketing
+      tier: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: ticketing
+        tier: rabbitmq
+    spec:
+      containers:
+      - name: rabbitmq
+        image: rabbitmq:3-management
+        ports:
+        - containerPort: 5672
+        - containerPort: 15672
+        env:
+        - name: RABBITMQ_IO_THREAD_POOL_SIZE
+          value: "30"
+        - name: RABBITMQ_DEFAULT_USER
+          value: guest
+        - name: RABBITMQ_DEFAULT_PASS
+          value: guest
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: customerapi
+  labels:
+    app: ticketing
+    tier: customerapi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ticketing
+      tier: customerapi
+  template:
+    metadata:
+      labels:
+        app: ticketing
+        tier: customerapi
+    spec:
+      containers:
+      - name: customerapi
+        image: ticketing2.azurecr.io/ticketingmicroservice:v1
+        ports:
+        - containerPort: 80
+        - containerPort: 443
+        # env:
+        # - name: ASPNETCORE_Kestrel__Certificates__Default__KeyPath
+        #   value: /etc/tls/tls.key
+        # - name: ASPNETCORE_Kestrel__Certificates__Default__Path
+        #   value: /etc/tls/tls.crt
+      #   volumeMounts:
+      #   - name: tls
+      #     mountPath: /etc/tls
+      #     readOnly: true
+      # volumes:
+      # - name: tls
+      #   secret:
+      #     secretName: www-tls
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orderapi
+  labels:
+    app: ticketing
+    tier: orderapi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ticketing
+      tier: orderapi
+  template:
+    metadata:
+      labels:
+        app: ticketing
+        tier: orderapi
+    spec:
+      containers:
+      - name: orderapi
+        image: ticketing2.azurecr.io/ticketprocessormicroservice:v1
+        ports:
+        - containerPort: 80
+        - containerPort: 443
+        env:
+        # - name: ASPNETCORE_URLS
+        #   value: https://+:443;http://+:80
+      #   - name: ASPNETCORE_Kestrel__Certificates__Default__Password
+      #     value: mysecret
+      #   - name: ASPNETCORE_Kestrel__Certificates__Default__Path
+      #     value: /https/ticket-processor.pfx
+      #   volumeMounts:
+      #   - name: certs
+      #     mountPath: /https
+      #     readOnly: true
+      # volumes:
+      # - name: certs
+      #   configMap:
+      #     name: certs-configmap
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+spec:
+  type: LoadBalancer
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: 5672
+    - name: management
+      port: 15672
+      targetPort: 15672
+  selector:
+    app: ticketing
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orderapi
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: https
+      port: 443
+      targetPort: 443
+  selector:
+    app: ticketing
+    tier: orderapi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: customerapi
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: https
+      port: 443
+      targetPort: 443
+  selector:
+    app: ticketing
+    tier: customerapi
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: customerapi-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    # nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - ratking.eastus.cloudapp.azure.com
+    secretName: tls-secret
+  rules:
+  - host: ratking.eastus.cloudapp.azure.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: customerapi
+            port:
+              number: 80
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: example@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+          podTemplate:
+            spec:
+              nodeSelector:
+                "kubernetes.io/os": linux

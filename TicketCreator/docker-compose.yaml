@@ -1,0 +1,46 @@
+version: "3.6"
+services:
+    rabbitmq:
+        container_name: rabbitmq
+        ports:
+            - 5672:5672
+            - 15672:15672
+        environment:
+            - RABBITMQ_DEFAULT_USER=guest
+            - RABBITMQ_DEFAULT_PASS=guest        
+        image: rabbitmq:3-management
+                
+    customerapi:
+        container_name: ticketing
+        ports:
+            - 8000:80
+            - 8001:443
+        environment:
+            - "ASPNETCORE_URLS=https://+;http://+"    
+            - "ASPNETCORE_Kestrel__Certificates__Default__Password=mysecret"
+            - "ASPNETCORE_Kestrel__Certificates__Default__Path=/https/ticketing.pfx"
+        image: ticketingmicroservice:latest
+        restart: on-failure
+        depends_on:
+            - rabbitmq
+        volumes:
+            - ./certs:/https:ro
+
+    orderapi:
+        container_name: ticket-processor
+        ports:
+            - 9000:80
+            - 9001:443
+        environment:
+            - "ASPNETCORE_URLS=https://+;http://+"   
+            - "ASPNETCORE_Kestrel__Certificates__Default__Password=mysecret"
+            - "ASPNETCORE_Kestrel__Certificates__Default__Path=/https/ticket-processor.pfx"
+        image: ticketprocessormicroservice:latest    
+        restart: on-failure
+        depends_on:
+            - rabbitmq
+        volumes:
+            - ./certs:/https:ro
+
+volumes:
+    certs:
